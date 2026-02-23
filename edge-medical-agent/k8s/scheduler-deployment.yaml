@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-scheduler
+  namespace: medgemma-triage
+  labels:
+    app: report-scheduler
+    component: scheduler
+spec:
+  replicas: 1  # Only 1 replica to avoid duplicate polling
+  selector:
+    matchLabels:
+      app: report-scheduler
+  template:
+    metadata:
+      labels:
+        app: report-scheduler
+        component: scheduler
+    spec:
+      hostNetwork: true  # Access model servers on host
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: scheduler
+        image: medgemma-triage:latest
+        imagePullPolicy: Never
+        command: ["python", "-m", "src.scheduler.report_poller"]
+        envFrom:
+        - configMapRef:
+            name: triage-config
+        - secretRef:
+            name: triage-secrets
+        env:
+        - name: COMPONENT
+          value: "scheduler"
+        - name: POLL_INTERVAL_SECONDS
+          value: "60"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 30
+          periodSeconds: 60

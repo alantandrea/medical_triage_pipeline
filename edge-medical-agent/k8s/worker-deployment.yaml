@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-worker
+  namespace: medgemma-triage
+  labels:
+    app: pipeline-worker
+    component: worker
+spec:
+  replicas: 1  # Single worker to avoid race conditions on model servers
+  selector:
+    matchLabels:
+      app: pipeline-worker
+  template:
+    metadata:
+      labels:
+        app: pipeline-worker
+        component: worker
+    spec:
+      hostNetwork: true  # Access model servers on host
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: worker
+        image: medgemma-triage:latest
+        imagePullPolicy: Never
+        command: ["python", "-m", "src.worker.pipeline_worker"]
+        envFrom:
+        - configMapRef:
+            name: triage-config
+        - secretRef:
+            name: triage-secrets
+        env:
+        - name: COMPONENT
+          value: "worker"
+        - name: WORKER_CONCURRENCY
+          value: "1"  # Process one report at a time
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 30
+          periodSeconds: 60

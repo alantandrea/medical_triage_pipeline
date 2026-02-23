@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triage-config
+  namespace: medgemma-triage
+data:
+  TENANT_ID: "practice-001"
+  AWS_API_URL: "https://<your-api-id>.execute-api.<region>.amazonaws.com/prod"
+  # Model servers run on host, access via host network
+  MEDGEMMA_27B_URL: "http://localhost:8357"
+  MEDGEMMA_4B_URL: "http://localhost:8358"
+  # Infrastructure services in k3s
+  REDIS_URL: "redis://redis:6379"
+  MONGODB_URI: "mongodb://mongodb:27017"
+  MONGODB_DATABASE: "medgemma_triage"
+  # Scheduler settings
+  POLL_INTERVAL_SECONDS: "60"
+  MAX_ITEMS_PER_POLL: "50"
+  QUEUE_BACKPRESSURE_THRESHOLD: "20"
+  # Scoring thresholds
+  THRESHOLD_ROUTINE: "29"
+  THRESHOLD_FOLLOWUP: "30"
+  THRESHOLD_IMPORTANT: "50"
+  THRESHOLD_URGENT: "75"
+  # Vector analysis
+  RAPID_CHANGE_THRESHOLD_PERCENT: "20.0"
+  RAPID_CHANGE_WINDOW_DAYS: "30"
+  MAX_HISTORICAL_VALUES: "5"
+  # LOINC settings
+  LOINC_DATA_DIR: "/app/data/loinc"
+  LOINC_ENABLE_FUZZY: "false"
+  LOINC_FUZZY_THRESHOLD: "80"
+  # Email settings
+  SMTP_HOST: "smtp.your-email-provider.com"
+  SMTP_PORT: "465"
+  TECH_SUPPORT_EMAIL: "alerts@yourdomain.com"
+  CLINICAL_NOTIFICATION_EMAIL: "alerts@yourdomain.com"
+  FROM_EMAIL: "alerts@yourdomain.com"
+  OPENSEARCH_URL: "http://localhost:30920"
+  # Tapestry (patient body-map visualization)
+  TAPESTRY_ENABLED: "true"

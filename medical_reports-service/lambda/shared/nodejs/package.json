@@ -1,0 +1,5 @@
+{
+  "name": "shared-layer",
+  "version": "1.0.0",
+  "description": "Shared utilities for medical reports service"
+}

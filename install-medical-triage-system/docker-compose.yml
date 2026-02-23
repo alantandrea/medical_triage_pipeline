@@ -1,0 +1,166 @@
+###############################################################################
+# MedGemma Triage System — Docker Compose
+#
+# Starts all infrastructure services + the three application services.
+# Model servers (MedGemma 27B/4B) run on the host GPU — see setup_models.sh.
+#
+# Usage:
+#   1. cp ../edge-medical-agent/.env.example .env   (then edit .env)
+#   2. docker compose up -d
+#   3. bash setup_models.sh          (separate step — needs GPU)
+#   4. curl http://localhost:8000/health
+###############################################################################
+
+services:
+  # ── MongoDB ────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: medgemma-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: medgemma-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── OpenSearch (single-node, security disabled for demo) ──
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: medgemma-opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── OpenSearch Dashboards (optional — for viewing audit logs) ──
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: medgemma-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Application: API Server ────────────────────────────────
+  # FastAPI REST server — health checks, query endpoints, dashboard.
+  api:
+    build:
+      context: ../edge-medical-agent
+      dockerfile: Dockerfile
+    container_name: medgemma-api
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongodb:27017
+      - OPENSEARCH_URL=http://opensearch:9200
+      - MEDGEMMA_27B_URL=http://host.docker.internal:8357
+      - MEDGEMMA_4B_URL=http://host.docker.internal:8358
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Application: Scheduler ────────────────────────────────
+  # Polls the AWS backend every 60s for pending reports and queues them to Redis.
+  scheduler:
+    build:
+      context: ../edge-medical-agent
+      dockerfile: Dockerfile
+    container_name: medgemma-scheduler
+    command: ["python", "-m", "src.scheduler.report_poller"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongodb:27017
+      - OPENSEARCH_URL=http://opensearch:9200
+      - MEDGEMMA_27B_URL=http://host.docker.internal:8357
+      - MEDGEMMA_4B_URL=http://host.docker.internal:8358
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Application: Worker ────────────────────────────────────
+  # Consumes from the Redis queue and runs the 8-step LangGraph triage pipeline.
+  worker:
+    build:
+      context: ../edge-medical-agent
+      dockerfile: Dockerfile
+    container_name: medgemma-worker
+    command: ["python", "-m", "src.worker.pipeline_worker"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongodb:27017
+      - OPENSEARCH_URL=http://opensearch:9200
+      - MEDGEMMA_27B_URL=http://host.docker.internal:8357
+      - MEDGEMMA_4B_URL=http://host.docker.internal:8358
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mongodb_data:
+  redis_data:
+  opensearch_data:

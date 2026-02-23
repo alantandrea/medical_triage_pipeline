@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: medgemma-triage
+  labels:
+    app: medgemma-triage
